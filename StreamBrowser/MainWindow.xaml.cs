@@ -54,6 +54,13 @@ namespace StreamBrowser
                 // 作成した環境を指定して WebView2 を初期化
                 await webView.EnsureCoreWebView2Async(env);
 
+                // 使用しないコンテキストメニューを無効化
+                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false; // デフォルトのコンテキストメニューを無効化
+                webView.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false; // スクリプトダイアログを無効化
+                webView.CoreWebView2.Settings.IsStatusBarEnabled = false; // ステータスバーを無効化
+                webView.CoreWebView2.Settings.IsZoomControlEnabled = false; // ズームコントロールを無効化
+                webView.CoreWebView2.Settings.IsBuiltInErrorPageEnabled = false; // 組み込みエラーページを無効化
+
                 // WebView2の初期化が完了したら、Webページを読み込む
                 if (webView.CoreWebView2 != null)
                 {
