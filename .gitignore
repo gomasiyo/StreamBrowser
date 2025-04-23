@@ -1,0 +1,44 @@
+# Build results
+bin/
+obj/
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.userprefs
+
+# Visual Studio working files
+.vscode/
+.vs/
+*.vcxproj.user
+*.pdb
+
+# NuGet packages
+*.nupkg
+packages/
+*.snupkg
+
+# Logs
+*.log
+
+# WebView2 auto-generated files
+WebView2/
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+*.ide
+
+# Rider/JetBrains specific
+.idea/
+*.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Resharper
+_ReSharper*/
