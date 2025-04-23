@@ -8,6 +8,6 @@
        mc:Ignorable="d"
        Title="StreamBrowser" Height="720" Width="1280">
     <Grid>
-        <wv2:WebView2 Name="webView" Source="https://www.youtube.com/" />
+        <wv2:WebView2 Name="webView" />
     </Grid>
 </Window>
