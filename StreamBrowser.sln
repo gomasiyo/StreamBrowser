@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35931.197 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StreamBrowser", "StreamBrowser\StreamBrowser.csproj", "{2F3DEC92-5375-4222-8BAA-51F3216E12DC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2F3DEC92-5375-4222-8BAA-51F3216E12DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F3DEC92-5375-4222-8BAA-51F3216E12DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F3DEC92-5375-4222-8BAA-51F3216E12DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F3DEC92-5375-4222-8BAA-51F3216E12DC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {504B0C2D-DB47-4CBD-AD13-5E52DB9591CE}
+	EndGlobalSection
+EndGlobal
