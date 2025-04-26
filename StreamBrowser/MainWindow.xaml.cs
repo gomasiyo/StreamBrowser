@@ -2,9 +2,11 @@
 using Microsoft.Web.WebView2.Core;
 using StreamBrowser.Models;
 using System;
+using System.Collections.Generic; // List<T> を使うために必要
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -18,8 +20,8 @@ namespace StreamBrowser
         private const string SettingsFileName = "Settings/URL.json";
         private const string UrlSettingsSection = "URLSetting";
 
+        public URLs URLs { get; private set; } = new URLs();
         public int DefaultPage { get; private set; } = 0;
-        public URLs? URLs { get; private set; }
 
         private bool _isWebViewInitialized = false;
 
@@ -29,328 +31,401 @@ namespace StreamBrowser
         public MainWindow()
         {
             InitializeComponent();
-            this.DataContext = this; // DataBinding のために設定
+            // イベントハンドラの登録
             Loaded += Window_Loaded;
+            Closed += Window_Closed;
+            // WebView2 の初期化完了イベントハンドラを登録 (XAMLでも可)
+            webView.CoreWebView2InitializationCompleted += WebView_CoreWebView2InitializationCompleted;
         }
 
         /// <summary>
-        /// ウィンドウの Loaded イベントを処理します。設定の読み込みと WebView2 の初期化を開始します。
+        /// ウィンドウの Loaded イベントを非同期で処理します。設定の読み込みと WebView2 の初期化を開始します。
         /// </summary>
-        /// <param name="sender">イベントのソース。</param>
-        /// <param name="e">イベントデータ。</param>
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            await LoadUrlSettingsAsync(SettingsFileName, UrlSettingsSection);
-            // WebView2 の初期化は非同期で行われ、完了後に CoreWebView2InitializationCompleted が呼ばれる
-            await InitializeWebView2Async();
+            try
+            {
+                await LoadUrlSettingsAsync(SettingsFileName, UrlSettingsSection);
+                await InitializeWebView2Async();
+            }
+            catch (Exception ex) // 初期化中の予期せぬエラーをキャッチ
+            {
+                ShowError($"アプリケーションの初期化中にエラーが発生しました。\n{ex.Message}");
+            }
         }
+
+        /// <summary>
+        /// ウィンドウの Closed イベントを処理します。イベントハンドラを解除し、リソースを解放します。
+        /// </summary>
+        private void Window_Closed(object? sender, EventArgs e)
+        {
+            // イベントハンドラの解除
+            Loaded -= Window_Loaded;
+            Closed -= Window_Closed;
+
+            if (webView != null)
+            {
+                webView.CoreWebView2InitializationCompleted -= WebView_CoreWebView2InitializationCompleted;
+                if (webView.CoreWebView2 != null)
+                {
+                    try
+                    {
+                        // ContextMenuRequested イベントハンドラを解除
+                        webView.CoreWebView2.ContextMenuRequested -= WebView_ContextMenuRequested;
+                        // CustomItemSelected は MenuItem ごとに解除されるため、ここでは不要
+                    }
+                    catch (ObjectDisposedException) { /* WebView2 が既に破棄されている場合は無視 */ }
+                    catch (InvalidOperationException) { /* その他の予期せぬ状態変化の場合も無視 */ }
+                }
+                // WebView2 コントロールのリソースを解放
+                webView.Dispose();
+            }
+        }
+
 
         /// <summary>
         /// WebView2 の CoreWebView2 の初期化完了イベントを処理します。
-        /// 初期化成功時に、コンテキストメニューイベントの購読、設定の適用、初期ページへのナビゲーションを行います。
         /// </summary>
-        /// <param name="sender">イベントのソース。</param>
-        /// <param name="e">初期化完了イベントのデータ。</param>
         private void WebView_CoreWebView2InitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
         {
             if (e.IsSuccess)
             {
                 _isWebViewInitialized = true;
-
-                // CoreWebView2 オブジェクトが利用可能になったらイベントハンドラを登録
-                if (webView.CoreWebView2 != null)
+                try
                 {
+                    if (webView?.CoreWebView2 == null)
+                    {
+                        ShowError("WebView2 の CoreWebView2 オブジェクトが予期せず null です。");
+                        _isWebViewInitialized = false;
+                        return;
+                    }
+
                     // コンテキストメニュー表示要求時のイベントハンドラを登録
                     webView.CoreWebView2.ContextMenuRequested += WebView_ContextMenuRequested;
+                    ConfigureWebView2Settings();
+                    // WebView2 が準備できたので、初期ページに移動する
+                    TryNavigateToInitialPage();
                 }
-
-                ConfigureWebView2Settings();
-                // WebView2 が準備できたので、最初のページに移動する
-                NavigateToDefaultPage();
+                catch (Exception ex)
+                {
+                    ShowError($"WebView2 の設定または初期ナビゲーション中にエラーが発生しました。\n{ex.Message}");
+                    _isWebViewInitialized = false;
+                }
             }
             else
             {
                 _isWebViewInitialized = false;
-                MessageBox.Show($"WebView2 のコア初期化に失敗しました。\nエラー: {e.InitializationException?.Message}", "WebView2 初期化エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowError($"WebView2 のコア初期化に失敗しました。\nエラー: {e.InitializationException?.ToString() ?? "不明なエラー"}");
             }
         }
 
         /// <summary>
         /// WebView2 のコンテキストメニュー表示要求イベントを処理します。
-        /// デフォルトのメニュー項目をクリアし、設定ファイルから読み込んだ URL に基づいてカスタムメニュー項目を追加します。
+        /// 一時リストを使用してメニュー項目を作成し、成功した場合のみ既存メニューを置き換えます。
         /// </summary>
-        /// <param name="sender">イベントのソース。</param>
-        /// <param name="e">コンテキストメニュー要求イベントのデータ。</param>
         private void WebView_ContextMenuRequested(object? sender, CoreWebView2ContextMenuRequestedEventArgs e)
         {
-            // WebView2 の環境が利用できない場合は何もしない
-            if (webView?.CoreWebView2?.Environment == null)
+            // WebView2 またはその環境が利用できない場合はデフォルトメニューを表示
+            if (webView?.CoreWebView2?.Environment == null) return;
+
+            // 表示する URL が設定されていない場合はデフォルトメニューを表示
+            if (URLs.Count == 0)
             {
                 return;
             }
 
-            // 表示する URL が設定されていない場合は、デフォルトのコンテキストメニューを表示させる (または何もしない)
-            if (URLs == null || URLs.Count == 0)
+            var customMenuItems = new List<CoreWebView2ContextMenuItem>();
+            bool creationSuccess = false;
+            try
             {
-                return;
-            } else {
-                 // カスタムメニューのみを表示するため、既存の (デフォルトの) メニュー項目をすべて削除
-                e.MenuItems.Clear();
+                // 1. カスタムメニュー項目を一時リストに作成
+                foreach (var urlEntry in URLs)
+                {
+                    if (!string.IsNullOrWhiteSpace(urlEntry.Name) && IsValidUrl(urlEntry.Url)) // URLの有効性もチェック
+                    {
+                        CoreWebView2ContextMenuItem newItem = webView.CoreWebView2.Environment.CreateContextMenuItem(
+                            urlEntry.Name,
+                            null, // アイコンなし
+                            CoreWebView2ContextMenuItemKind.Command
+                        );
+
+                        // イベントハンドラを登録 (毎回新しいMenuItemなので事前の解除は不要)
+                        newItem.CustomItemSelected += ContextMenuItem_CustomItemSelected;
+                        customMenuItems.Add(newItem);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(urlEntry.Name)) // 名前はあるがURLが無効な場合
+                    {
+                        // ログやデバッグ出力で警告を出すと良いかもしれません
+                        // System.Diagnostics.Debug.WriteLine($"Warning: Invalid or empty URL for menu item '{urlEntry.Name}'.");
+                    }
+                }
+                creationSuccess = true; // ここまで例外なく到達したら作成成功
+            }
+            catch (Exception ex)
+            {
+                ShowWarning($"コンテキストメニュー項目の作成中にエラーが発生しました。\n{ex.Message}");
+                // creationSuccess は false のまま
             }
 
+            // 2. メニュー項目の作成に成功し、かつ1つ以上の有効な項目がある場合のみ、
+            //    既存のメニューをクリアしてカスタムメニューに置き換える。
+            if (creationSuccess && customMenuItems.Any())
+            {
+                e.MenuItems.Clear(); // ここで初めてクリアする
+                foreach (var item in customMenuItems)
+                {
+                    e.MenuItems.Add(item);
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// カスタムコンテキストメニュー項目のクリックイベントを処理します。
+        /// </summary>
+        private void ContextMenuItem_CustomItemSelected(object? sender, object e)
+        {
+            if (sender is not CoreWebView2ContextMenuItem menuItem) return;
+
+            // イベントハンドラを解除 (クリック後に不要になるため、メモリリーク防止)
+            menuItem.CustomItemSelected -= ContextMenuItem_CustomItemSelected;
 
             try
             {
-                // 設定ファイルから読み込んだ URL リストを反復処理
-                foreach (var urlEntry in URLs)
-                {
-                    // Name と Url が両方とも有効な場合のみメニュー項目を作成
-                    if (!string.IsNullOrWhiteSpace(urlEntry.Name) && !string.IsNullOrWhiteSpace(urlEntry.Url))
-                    {
-                        // WebView2 環境を使用して新しいメニュー項目を作成
-                        CoreWebView2ContextMenuItem newItem = webView.CoreWebView2.Environment.CreateContextMenuItem(
-                            urlEntry.Name, // メニューに表示されるテキスト
-                            null,          // アイコン (今回はなし)
-                            CoreWebView2ContextMenuItemKind.Command // 通常のクリック可能なコマンド
-                        );
+                string menuItemName = menuItem.Name;
+                // クリックされたメニュー名と一致する URL エントリを検索
+                var foundUrlEntry = URLs.FirstOrDefault(u => u.Name == menuItemName);
 
-                        // メニュー項目がクリックされたときのイベントハンドラを登録
-                        newItem.CustomItemSelected += ContextMenuItem_CustomItemSelected;
-                        // 作成したメニュー項目をコンテキストメニューに追加
-                        e.MenuItems.Add(newItem);
-                    }
+                // URLが見つかり、かつ有効であることを確認してからナビゲート
+                if (foundUrlEntry != null && IsValidUrl(foundUrlEntry.Url))
+                {
+                    NavigateToUrl(foundUrlEntry.Url);
+                }
+                else
+                {
+                    // この警告は通常、WebView_ContextMenuRequested で無効なURLが除外されていれば表示されないはず
+                    ShowWarning($"メニュー項目 '{menuItemName}' に対応する有効なURLが見つかりませんでした。");
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"コンテキストメニューの作成中にエラーが発生しました。\n{ex.Message}", "メニュー作成エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }
-        }
-
-        /// <summary>
-        /// カスタムコンテキストメニュー項目のクリックイベントを処理します。
-        /// クリックされたメニュー項目に対応する URL へ WebView2 でナビゲートします。
-        /// </summary>
-        /// <param name="sender">イベントのソース (クリックされた CoreWebView2ContextMenuItem)。</param>
-        /// <param name="e">イベントデータ (通常は null)。</param>
-        private void ContextMenuItem_CustomItemSelected(object? sender, object e)
-        {
-            // sender が CoreWebView2ContextMenuItem であることを確認
-            if (sender is CoreWebView2ContextMenuItem menuItem)
-            {
-                // メニュー項目の表示名 (CreateContextMenuItem で設定したもの) を取得
-                string menuItemName = menuItem.Name;
-                string? targetUrl = null;
-
-                // URLs リストが null でないことを確認
-                if (URLs != null)
-                {
-                    // Linq を使用して、クリックされたメニュー名と一致する Name を持つ URL エントリを検索
-                    var foundUrlEntry = URLs.FirstOrDefault(u => u.Name == menuItemName);
-                    // 一致するエントリが見つかった場合、その URL を取得
-                    if (foundUrlEntry != null)
-                    {
-                        targetUrl = foundUrlEntry.Url;
-                    }
-                }
-
-                // URL が有効で、WebView2 が初期化済みの場合にナビゲートを実行
-                if (!string.IsNullOrWhiteSpace(targetUrl) &&
-                    Uri.IsWellFormedUriString(targetUrl, UriKind.Absolute) &&
-                    _isWebViewInitialized && webView?.CoreWebView2 != null)
-                {
-                    webView.CoreWebView2.Navigate(targetUrl);
-                }
-                // URL が見つからなかった場合のエラー表示
-                else if (string.IsNullOrWhiteSpace(targetUrl))
-                {
-                     MessageBox.Show($"メニュー項目 '{menuItemName}' に対応する有効なURLが見つかりませんでした。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                // WebView2 が準備できていない場合のエラー表示
-                else if (!_isWebViewInitialized || webView?.CoreWebView2 == null)
-                {
-                    MessageBox.Show("WebView がまだ準備できていません。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                // URL は存在するが形式が無効な場合のエラー表示
-                else
-                {
-                    MessageBox.Show($"無効な URL です: {targetUrl}", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
+                ShowWarning($"メニュー項目の処理中にエラーが発生しました。\n{ex.Message}");
             }
         }
 
         /// <summary>
         /// WebView2 コントロールを非同期で初期化します。
-        /// 必要な環境オプションを設定し、CoreWebView2 を準備します。
         /// </summary>
         private async Task InitializeWebView2Async()
         {
-            // 既に初期化済み、または CoreWebView2 が存在する場合は処理をスキップ
-            if (_isWebViewInitialized || webView.CoreWebView2 != null)
-            {
-                return;
-            }
-
             try
             {
-                // WebView2 環境のオプションを設定
                 var envOptions = new CoreWebView2EnvironmentOptions
                 {
-                    // 特定の環境で問題が発生する場合があるため、GPU アクセラレーションを無効にする
+                    // ハードウェアアクセラレーションを無効にする場合
                     AdditionalBrowserArguments = "--disable-gpu"
                 };
-                // WebView2 環境を作成 (ユーザーデータフォルダ等はデフォルトを使用)
+
                 var env = await CoreWebView2Environment.CreateAsync(null, null, envOptions);
-                // WebView2 コントロールの CoreWebView2 を初期化
                 await webView.EnsureCoreWebView2Async(env);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"WebView2 の初期化準備中にエラーが発生しました。\nエラー: {ex.Message}", "WebView2 初期化エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowError($"WebView2 の初期化準備中にエラーが発生しました。\nエラー: {ex.Message}");
+                _isWebViewInitialized = false; // 初期化失敗を示す
             }
         }
 
         /// <summary>
-        /// WebView2 の設定を行います。デフォルトコンテキストメニューの有効化やステータスバーの非表示などを設定します。
+        /// WebView2 の設定を行います。
         /// </summary>
         private void ConfigureWebView2Settings()
         {
-            // CoreWebView2 が利用可能か確認
-            if (webView.CoreWebView2 == null)
-            {
-                return;
-            }
+            if (webView?.CoreWebView2 == null) return;
+
             try
             {
-                // ContextMenuRequested イベントが発生するためには、デフォルトのコンテキストメニューを有効にする必要がある
-                webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
-                // アプリケーションの UI に合わせてステータスバーを非表示にする
-                webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                var settings = webView.CoreWebView2.Settings;
+                settings.AreDefaultContextMenusEnabled = true; // カスタムメニュー表示のためにTrue
+                settings.IsStatusBarEnabled = false;
+                settings.IsScriptEnabled = true;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"WebView2 の設定適用中にエラーが発生しました。\n{ex.Message}", "WebView2 設定エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowWarning($"WebView2 の設定適用中にエラーが発生しました。\n{ex.Message}");
             }
         }
 
         /// <summary>
-        /// 設定ファイルで指定されたデフォルトページに WebView2 でナビゲートします。
+        /// 設定に基づいて初期ページへのナビゲーションを試みます。
         /// </summary>
-        private void NavigateToDefaultPage()
+        private void TryNavigateToInitialPage()
         {
-            // WebView2 が初期化されていない場合はナビゲーションしない
-            if (!_isWebViewInitialized || webView?.CoreWebView2 == null)
+            if (!_isWebViewInitialized)
             {
+                // WebView_CoreWebView2InitializationCompleted で初期化失敗時にエラー表示されるため、
+                // ここでは警告を表示しないか、より簡潔なメッセージにする。
+                // ShowWarning("WebView が初期化されていないため、ナビゲーションできません。");
                 return;
             }
 
-            // URL リストが読み込まれていない場合はエラー表示
-            if (URLs == null || URLs.Count == 0)
+            if (URLs.Count == 0)
             {
-                MessageBox.Show("表示するURLが設定ファイルに定義されていないか、読み込みに失敗しました。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ShowWarning("表示するURLが設定ファイルに定義されていないか、読み込みに失敗しました。");
+                NavigateToUrl("about:blank"); // URLがない場合は空白ページへ
                 return;
             }
 
-            // DefaultPage インデックスが有効範囲内か確認
+            string? targetUrl = null;
+
+            // 1. DefaultPage インデックスの URL を試す
             if (DefaultPage >= 0 && DefaultPage < URLs.Count)
             {
-                string initialUrl = URLs[DefaultPage].Url;
-                // URL が有効な形式か確認
-                if (!string.IsNullOrWhiteSpace(initialUrl) && Uri.IsWellFormedUriString(initialUrl, UriKind.Absolute))
+                string? defaultUrl = URLs[DefaultPage].Url;
+                if (IsValidUrl(defaultUrl))
                 {
-                    webView.CoreWebView2.Navigate(initialUrl);
+                    targetUrl = defaultUrl;
                 }
                 else
                 {
-                    // デフォルト URL が無効な場合は、最初の有効な URL へフォールバック
-                    MessageBox.Show($"デフォルトページとして指定されたURLが無効です (Index: {DefaultPage}, URL: '{initialUrl}')。\n最初の有効なURLに移動します。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    NavigateToFirstValidUrl();
+                    ShowWarning($"デフォルトページとして指定されたURLが無効です (Index: {DefaultPage}, URL: '{defaultUrl ?? "null"}')。");
                 }
             }
             else
             {
-                // DefaultPage インデックスが無効な場合は、最初の有効な URL へフォールバック
-                MessageBox.Show($"デフォルトページのインデックス ({DefaultPage}) が無効です。\n最初の有効なURLに移動します。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                NavigateToFirstValidUrl();
-            }
-        }
-
-        /// <summary>
-        /// 設定ファイル内の URL リストから、最初に見つかった有効な URL に WebView2 でナビゲートします。
-        /// </summary>
-        private void NavigateToFirstValidUrl()
-        {
-            // WebView2 が初期化されていない、または URL リストがない場合は処理しない
-            if (!_isWebViewInitialized || webView?.CoreWebView2 == null || URLs == null)
-            {
-                 return;
+                ShowWarning($"デフォルトページのインデックス ({DefaultPage}) が範囲外です。");
             }
 
-            // URL リストを順番にチェック
-            foreach (var urlEntry in URLs)
+            // 2. DefaultPage が無効または範囲外だった場合、リストの最初から有効な URL を探す
+            if (targetUrl == null)
             {
-                // 有効な形式の URL が見つかったらナビゲートして終了
-                if (!string.IsNullOrWhiteSpace(urlEntry.Url) && Uri.IsWellFormedUriString(urlEntry.Url, UriKind.Absolute))
+                targetUrl = URLs.Select(u => u.Url).FirstOrDefault(IsValidUrl);
+                if (targetUrl != null)
                 {
-                    webView.CoreWebView2.Navigate(urlEntry.Url);
-                    return; // 最初の有効な URL にナビゲートしたらループを抜ける
+                    ShowWarning("デフォルトページが無効または範囲外のため、リスト内の最初の有効なURLに移動します。");
                 }
             }
 
-            // 有効な URL が一つも見つからなかった場合のエラー表示
-            MessageBox.Show("設定ファイルに有効なURLが見つかりませんでした。", "ナビゲーションエラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            // 3. ナビゲーション実行
+            if (targetUrl != null)
+            {
+                NavigateToUrl(targetUrl);
+            }
+            else
+            {
+                // 有効なURLが一つも見つからなかった場合
+                ShowError("設定ファイルに有効なURLが見つかりませんでした。");
+                NavigateToUrl("about:blank"); // 有効なURLがない場合は空白ページへ
+            }
         }
 
         /// <summary>
-        /// 指定された JSON 設定ファイルから URL 設定（デフォルトページインデックスと URL リスト）を非同期で読み込みます。
+        /// 指定されたURLにナビゲートします。
         /// </summary>
-        /// <param name="path">設定ファイルの相対パス。</param>
-        /// <param name="section">設定ファイル内の読み込むセクション名。</param>
-        private async Task LoadUrlSettingsAsync(string path, string section)
+        /// <param name="url">ナビゲート先のURL。</param>
+        private void NavigateToUrl(string url)
         {
+            // WebViewが初期化済みでCoreWebView2が利用可能かチェック
+            if (!_isWebViewInitialized || webView?.CoreWebView2 == null)
+            {
+                ShowWarning($"WebView が初期化されていないため、URL '{url}' にナビゲーションできません。");
+                return;
+            }
+
             try
             {
-                // アプリケーションのベースディレクトリからの相対パスを絶対パスに変換
-                string fullPath = Path.Combine(AppContext.BaseDirectory, path);
-                // ファイルの内容を非同期で読み込み
-                string jsonContent = await File.ReadAllTextAsync(fullPath, Encoding.UTF8);
-                // JSON 文字列をメモリストリームに変換 (ConfigurationBuilder で読み込むため)
-                using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(jsonContent));
+                webView.CoreWebView2.Navigate(url);
+            }
+            catch (Exception ex) // Navigate で例外が発生する可能性は低いが念のため
+            {
+                ShowError($"ナビゲーション中にエラーが発生しました (URL: {url})。\n{ex.Message}");
+            }
+        }
 
-                // ConfigurationBuilder を使用して設定を構築
+        /// <summary>
+        /// 指定された文字列が有効な絶対URIかどうかを判定します。
+        /// </summary>
+        /// <param name="url">検証するURL文字列。</param>
+        /// <returns>有効な絶対URIであれば <c>true</c>、そうでなければ <c>false</c>。</returns>
+        private bool IsValidUrl(string? url)
+        {
+            return !string.IsNullOrWhiteSpace(url) && Uri.IsWellFormedUriString(url, UriKind.Absolute);
+        }
+
+
+        /// <summary>
+        /// 指定された JSON 設定ファイルから URL 設定を非同期で読み込みます。
+        /// </summary>
+        /// <param name="path">アプリケーションベースディレクトリからの相対パス。</param>
+        /// <param name="section">JSON内の設定セクション名。</param>
+        private async Task LoadUrlSettingsAsync(string path, string section)
+        {
+            // 読み込み前にプロパティをデフォルト値にリセット
+            this.URLs = new URLs();
+            this.DefaultPage = 0;
+
+            try
+            {
+                string fullPath = Path.Combine(AppContext.BaseDirectory, path);
+                if (!File.Exists(fullPath))
+                {
+                    ShowError($"設定ファイルが見つかりません: {fullPath}");
+                    return; // 設定が読み込めないのでここで終了
+                }
+
+                // UTF8 でファイルを非同期に読み込む
+                string jsonContent = await File.ReadAllTextAsync(fullPath, Encoding.UTF8);
+
+                // JSON 文字列から設定を構築
+                using var memoryStream = new MemoryStream(Encoding.UTF8.GetBytes(jsonContent));
                 var config = new ConfigurationBuilder()
-                    .SetBasePath(AppContext.BaseDirectory) // 設定ファイルの検索基点を設定
-                    .AddJsonStream(memoryStream)           // メモリストリームから JSON 設定を読み込み
+                    .AddJsonStream(memoryStream)
                     .Build();
 
-                // URLSettingData オブジェクトを作成し、設定値をバインド
+                // 設定データをバインドするオブジェクトを準備
                 var urlSettings = new URLSettingData();
-                config.GetSection(section).Bind(urlSettings); // 指定されたセクションの値をオブジェクトにマップ
+                // 指定されたセクションをオブジェクトにバインド
+                config.GetSection(section).Bind(urlSettings);
 
                 // 読み込んだ設定値をプロパティにセット
                 this.DefaultPage = urlSettings.DefaultPage;
-                // URLs が null の場合は空のリストを生成
-                this.URLs = urlSettings.Urls ?? new URLs();
+                // Urls プロパティは null 非許容なので null チェック不要
+                this.URLs = urlSettings.Urls ?? new URLs(); // Bind が null を設定する可能性に備える (通常はないはず)
             }
-            catch (FileNotFoundException)
+            catch (JsonException ex) // JSON 解析エラー
             {
-                MessageBox.Show($"設定ファイルが見つかりません: {path}", "設定エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                // エラー発生時は空のリストとデフォルト値で初期化
-                this.URLs = new URLs();
-                this.DefaultPage = 0;
+                 ShowError($"設定ファイルの JSON 解析に失敗しました。\nファイル: {path}\nエラー箇所 (推定): Path={ex.Path}, Line={ex.LineNumber}, Pos={ex.BytePositionInLine}\nメッセージ: {ex.Message}");
             }
-            catch (IOException ex)
+            catch (IOException ex) // ファイル読み取りエラー
             {
-                MessageBox.Show($"設定ファイルの読み込み中にエラーが発生しました。\nファイル: {path}\nエラー: {ex.Message}", "設定エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                this.URLs = new URLs();
-                this.DefaultPage = 0;
+                ShowError($"設定ファイルの読み込み中に I/O エラーが発生しました。\nファイル: {path}\nエラー: {ex.Message}");
             }
-            catch (Exception ex) // JSON 解析エラーなども含む可能性のある一般的な例外
+            catch (Exception ex) // その他の予期せぬエラー (Bind の失敗など)
             {
-                MessageBox.Show($"URL設定の読み込みまたは解析に失敗しました。\nファイル: {path}\nセクション: {section}\nエラー: {ex.Message}", "設定エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                this.URLs = new URLs();
-                this.DefaultPage = 0;
+                ShowError($"URL設定の読み込み中に予期せぬエラーが発生しました。\nファイル: {path}\nセクション: {section}\nエラー: {ex.ToString()}");
             }
+        }
+
+        // MessageBox を表示するためのヘルパーメソッド (エラー用)
+        private void ShowError(string message)
+        {
+            // UI スレッドから呼び出すことを保証 (非同期メソッドから呼ばれる可能性があるため)
+            Dispatcher.Invoke(() =>
+            {
+                MessageBox.Show(this, message, "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            });
+            // TODO: ログ出力
+        }
+
+        // MessageBox を表示するためのヘルパーメソッド (警告用)
+        private void ShowWarning(string message)
+        {
+            // UI スレッドから呼び出すことを保証
+            Dispatcher.Invoke(() =>
+            {
+                MessageBox.Show(this, message, "警告", MessageBoxButton.OK, MessageBoxImage.Warning);
+            });
+            // TODO: ログ出力
         }
     }
 }
