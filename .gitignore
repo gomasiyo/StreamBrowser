@@ -1,44 +1,99 @@
-# Build results
-bin/
-obj/
+#====================================================================
+# General .NET / Visual Studio / Rider / VS Code
+#====================================================================
 
-# User-specific files
+# Build results - コンパイル結果 (実行ファイル、ライブラリなど)
+[Bb]in/
+[Oo]bj/
+
+# Ignore contents of the Release directory, but keep the directory itself via .gitkeep
+Release/*
+!Release/.gitkeep
+
+# User-specific files - ユーザー固有の設定 (ローカルパス、ウィンドウレイアウトなど)
 *.user
 *.userosscache
 *.suo
 *.userprefs
+*.sln.docstates
 
-# Visual Studio working files
-.vscode/
+# Visual Studio specific files - Visual Studio が生成する一時ファイルや設定
 .vs/
 *.vcxproj.user
+*.*proj.user
+
+# IDE specific - Rider / JetBrains
+.idea/
+*.iml
+
+# IDE specific - VS Code
+.vscode/
+
+# Debugging files - デバッグ情報ファイル (通常、ビルド時に生成)
 *.pdb
 
-# NuGet packages
-*.nupkg
+# Configuration files generated during build - ビルド時に生成される設定ファイル
+*.dll.config
+*.exe.config
+
+# NuGet packages folder (older format) and package files - NuGet パッケージ関連
 packages/
+*.nupkg
 *.snupkg
 
-# Logs
+# NuGet temporary files - NuGet が使用する一時ファイル
+project.lock.json
+project.assets.json
+
+# Log files - ログファイル
 *.log
+Log/
+Logs/
 
-# WebView2 auto-generated files
-WebView2/
-
-# Temporary files
+# Temporary files - 一時ファイル
 *.tmp
 *.temp
 *.cache
 *.ide
 
-# Rider/JetBrains specific
-.idea/
-*.iml
-
-# OS generated files
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Resharper
+# ReSharper specific files - ReSharper 関連ファイル
 _ReSharper*/
+*.DotSettings.user
+
+#====================================================================
+# OS generated files - OS が自動生成するファイル
+#====================================================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+#====================================================================
+# Project specific: StreamBrowser (WPF with WebView2)
+#====================================================================
+
+# WebView2 specific files - WebView2 のキャッシュやダウンロードされたランタイムなど
+# これらは実行時に生成されるかダウンロードされるため、リポジトリに含めません。
+WebView2/
+EBWebView/
+
+# Publish results - 発行された成果物 (通常 bin/ でカバーされるが、明示的に追加も可能)
+# publish/
+# Release/
+# Debug/
+
+# Secrets or configuration files that should NOT be committed
+# もしコミットすべきでない機密情報を含む設定ファイルがあれば、ここに追加します。
+# 例: appsettings.Development.json
+# appsettings.Development.json
+
