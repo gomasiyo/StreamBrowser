@@ -11,6 +11,18 @@
         "url": "https://www.amazon.co.jp/gp/video/storefront"
       },
       {
+        "@name": "YouTube",
+        "url": "https://www.youtube.com/"
+      },
+      {
+        "@name": "NicoNico",
+        "url": "https://www.nicovideo.jp/"
+      },
+      {
+        "@name": "TVer",
+        "url": "https://tver.jp/"
+      },
+      {
         "@name": "Disney+",
         "url": "https://www.disneyplus.com/ja-jp"
       }
