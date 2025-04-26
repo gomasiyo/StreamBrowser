@@ -1,0 +1,19 @@
+{
+  "URLSetting": {
+    "defaultPage": 0,
+    "urls": [
+      {
+        "@name": "U-NEXT",
+        "url": "https://video.unext.jp/"
+      },
+      {
+        "@name": "Prime Video",
+        "url": "https://www.amazon.co.jp/gp/video/storefront"
+      },
+      {
+        "@name": "Disney+",
+        "url": "https://www.disneyplus.com/ja-jp"
+      }
+    ]
+  }
+}
