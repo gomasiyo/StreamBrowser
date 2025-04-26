@@ -8,6 +8,9 @@
        mc:Ignorable="d"
        Title="StreamBrowser" Height="720" Width="1280">
     <Grid>
-        <wv2:WebView2 Name="webView" />
+        <!-- ★ ContextMenuRequested 属性を削除 -->
+        <wv2:WebView2 Name="webView"
+                      CoreWebView2InitializationCompleted="WebView_CoreWebView2InitializationCompleted"
+                      />
     </Grid>
 </Window>
