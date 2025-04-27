@@ -14,6 +14,9 @@
     <Description>動画配信サービス視聴用のウィンドウ内フルスクリーン対応ブラウザ</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/gomasiyo/StreamBrowser</RepositoryUrl>
+    <VersionPrefix>1.0.1</VersionPrefix>
+    <VersionSuffix></VersionSuffix>
+    <FileVersion>$(VersionPrefix)</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
