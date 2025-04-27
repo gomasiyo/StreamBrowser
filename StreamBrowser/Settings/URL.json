@@ -23,6 +23,14 @@
         "url": "https://tver.jp/"
       },
       {
+        "@name": "ABEMA",
+        "url": "https://abema.tv/"
+      },
+      {
+        "@name": "Netflix",
+        "url": "https://www.netflix.com/jp/"
+      },
+      {
         "@name": "Disney+",
         "url": "https://www.disneyplus.com/ja-jp"
       }
