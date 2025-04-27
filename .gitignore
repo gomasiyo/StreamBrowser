@@ -7,8 +7,8 @@
 [Oo]bj/
 
 # Ignore contents of the Release directory, but keep the directory itself via .gitkeep
-Release/*
-!Release/.gitkeep
+[Rr]elease/*
+![Rr]elease/.gitkeep
 
 # User-specific files - ユーザー固有の設定 (ローカルパス、ウィンドウレイアウトなど)
 *.user
