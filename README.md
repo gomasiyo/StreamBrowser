@@ -27,8 +27,8 @@ StreamBrowserは、主要な動画配信サービスの視聴体験を向上さ�
 *   YouTube
 *   NicoNico
 *   TVer
-*	Netlix
-*	ABEMA
+*   Netlix
+*   ABEMA
 *   Disney+
 
 *対応サービスの追加要望については、GitHub Issuesにて受け付けております。*
